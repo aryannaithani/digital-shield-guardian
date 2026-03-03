@@ -1,73 +1,252 @@
-# Welcome to your Lovable project
+# FootprintGuard  
+Multi-Agent Digital Footprint Risk Assessment Workflow (LangGraph + Gemini)
 
-## Project info
+FootprintGuard is a full-stack application that analyzes a person’s public digital footprint (GitHub, email breach exposure, username reuse across platforms, etc.) and produces a structured cyber risk assessment with mitigation advice.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+The system combines:
 
-## How can I edit this code?
+- A React + Vite frontend for structured input and risk visualization.
+- A FastAPI backend exposing a `/api/scan` endpoint.
+- A LangGraph workflow orchestrating four Gemini-powered agents (Planner → Gather → Generate → Evaluate).
+- Real OSINT-style tools for GitHub, email breach checks (LeakCheck public API), and username reuse detection.
 
-There are several ways of editing your application.
+The project emphasizes structured reasoning, bounded agent execution, and evidence-backed risk scoring.
 
-**Use Lovable**
+---
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Features
 
-Changes made via Lovable will be committed automatically to this repo.
+- Multi-source OSINT: GitHub public profile, email breach exposure, username reuse across major platforms.
+- Agentic workflow: Planner, Gatherer, Generator, Evaluator agents coordinated via LangGraph.
+- LLM-augmented reasoning: Gemini 2.5 Flash (via `langchain-google-genai`) for planning, report generation, and strict evaluation.
+- Structured output: Normalized risk score (0–100), risk level (Low/Medium/High), risk factors, and mitigation steps.
+- Interactive UI: Stage indicators, terminal-style agent logs, and structured risk visualization.
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Design Principles
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+FootprintGuard was built with the following architectural goals:
 
-Follow these steps:
+- Deterministic task selection via a whitelisted planner agent.
+- Strict JSON enforcement for report generation.
+- Evidence-backed reasoning validated by an evaluator agent.
+- Limited revision loop to prevent uncontrolled agent recursion.
+- Clear separation of concerns between planning, tool execution, generation, and validation.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+The system prioritizes structured reasoning and reproducibility over free-form LLM output.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+## Architecture Diagram
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```mermaid
+flowchart LR
+  subgraph Client["Frontend (React/Vite)"]
+    UI["Input form
+    - Stage indicator
+    - Risk gauge
+    - Logs & results"]
+  end
+
+  subgraph API["Backend (FastAPI)"]
+    ScanEP["POST /api/scan
+    - Validate input
+    - Invoke LangGraph workflow
+    - Return structured report"]
+  end
+
+  subgraph LangGraph["LangGraph Workflow"]
+    P["Planner Agent"]
+    Gath["Gatherer Agent"]
+    Gen["Generator Agent"]
+    Eval["Evaluator Agent"]
+  end
+
+  subgraph Tools["OSINT Tools"]
+    GH["GitHub API"]
+    LC["LeakCheck API"]
+    UR["Username reuse checks"]
+  end
+
+  Client -->|HTTP JSON| ScanEP
+  ScanEP --> P
+  P --> Gath
+  Gath --> Gen
+  Gen --> Eval
+  Eval -->|accept| ScanEP
+  Eval -->|revise loop| Gen
+
+  Gath --> GH
+  Gath --> LC
+  Gath --> UR
+```
+
+---
+
+## Why LangGraph?
+
+LangGraph was chosen to model the workflow as a stateful directed graph with conditional transitions.
+
+Benefits:
+
+- Explicit state transitions.
+- Controlled revision loops.
+- Deterministic termination conditions.
+- Clear separation between reasoning and tool execution.
+
+This avoids uncontrolled prompt chaining and ensures bounded agent execution.
+
+---
+
+## Agent Breakdown
+
+### Planner Agent
+- Uses Gemini 2.5 Flash via `ChatGoogleGenerativeAI`.
+- Normalizes user input.
+- Selects tasks from a strict whitelist:
+  - `check_breach_exposure`
+  - `analyze_github_public_data`
+  - `check_username_reuse`
+  - `analyze_bio_exposure`
+- Outputs structured JSON specifying tasks and normalized inputs.
+
+### Information-Gathering Agent
+- Executes selected tasks using:
+  - GitHub public API
+  - LeakCheck public API
+  - Username reuse checks across major platforms
+- Builds structured evidence dictionary for downstream reasoning.
+
+### Generator Agent
+- Converts structured evidence into a strictly formatted JSON risk report:
+  - `risk_score` (0–100)
+  - `risk_level`
+  - `risk_factors`
+  - `mitigations`
+
+### Evaluator Agent
+- Validates that every risk factor and mitigation is supported by evidence.
+- Returns `accept` or `revise`.
+- Enforces bounded revision loop to maintain control over agent execution.
+
+---
+
+## Backend Flow Overview
+
+- Entry point: `POST /api/scan`
+  - Validates and normalizes input.
+  - Creates initial AgentState.
+  - Invokes compiled LangGraph workflow.
+  - Returns structured response with evidence and timestamp.
+
+- Conditional graph logic:
+  - Accept → persist final report.
+  - Revise → limited loop back to generator.
+
+---
+
+## Frontend Flow Overview
+
+- Collects user inputs (GitHub username, email, social handles, full name).
+- Calls `POST /api/scan`.
+- Displays:
+  - Risk score gauge.
+  - Risk factors.
+  - Mitigation steps.
+  - Evidence breakdown.
+  - Agent-style execution logs.
+
+---
+
+## Environment Configuration
+
+Sensitive configuration must never be committed.
+
+Create `backend/.env` based on `backend/.env.example`:
+
+```
+GOOGLE_API_KEY=your_real_gemini_api_key_here
+```
+
+Ensure the variable is available in your environment before starting the backend.
+
+---
+
+## Running Locally
+
+### Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Endpoints:
+- `GET /health`
+- `GET /api/tools/status`
+- `POST /api/scan`
+
+### Frontend
+
+```bash
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Ensure backend runs on `http://localhost:8000`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## Example API Response
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```json
+{
+  "riskScore": 62,
+  "riskLevel": "High",
+  "riskFactors": [
+    "Email found in multiple data breaches",
+    "Public commit email exposed on GitHub",
+    "Username reused across multiple platforms"
+  ],
+  "mitigations": [
+    "Enable two-factor authentication",
+    "Rotate compromised passwords",
+    "Use GitHub noreply email",
+    "Separate professional and personal usernames"
+  ],
+  "evidence": {
+    "email": { "found_in_breaches": true },
+    "github": { "commit_email_exposed": true },
+    "username": { "reuse_count": 3 }
+  }
+}
+```
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## Deployment Notes
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+This project is intended to run locally due to:
 
-## How can I deploy this project?
+- Dependence on Gemini API keys.
+- Live OSINT lookups.
+- LLM-driven validation loops.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+Public deployment is intentionally avoided to prevent API key exposure and rate-limit issues.
 
-## Can I connect a custom domain to my Lovable project?
+A demo walkthrough video can be added here:
+(Insert Loom/YouTube link)
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Future Improvements
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Additional OSINT integrations.
+- Persistent scan history.
+- Authentication and per-user dashboards.
+- Report export (PDF).
+- Integration with security monitoring platforms.
